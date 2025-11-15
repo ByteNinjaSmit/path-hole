@@ -5,6 +5,7 @@ import { ControlPanel } from './components/ControlPanel.jsx'
 import { PotholeAlert } from './components/PotholeAlert.jsx'
 import { ConnectionStatus } from './components/ConnectionStatus.jsx'
 import { Chassis3D } from './components/Chassis3D.jsx'
+import { MapPanel } from './components/MapPanel.jsx'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
@@ -12,7 +13,7 @@ import { Slider } from '@/components/ui/slider'
 const wsUrl = (import.meta?.env?.VITE_WS_URL) || 'ws://localhost:8080/ws'
 
 function App() {
-  const { connected, serverStatus, telemetry, pothole, send } = useWebSocket(wsUrl)
+  const { connected, serverStatus, telemetry, pothole, routeEvent, send } = useWebSocket(wsUrl)
   const [orientation, setOrientation] = useState({ pitch: 0, roll: 0, yaw: 0, lastTs: null })
   const [zero, setZero] = useState({ pitch: 0, roll: 0, yaw: 0 })
   const [smoothing, setSmoothing] = useState(0.18) // slerp smoothing for 3D
@@ -126,7 +127,15 @@ function App() {
           </Card>
         </div>
 
-        {/* motor + IMU cards are now rendered inside ControlPanel for a tighter top layout */}
+        <div>
+          <MapPanel
+            telemetry={telemetry}
+            pothole={pothole}
+            routeEvent={routeEvent}
+            send={send}
+            esp32Connected={serverStatus.esp32Connected}
+          />
+        </div>
       </div>
     </div>
   )

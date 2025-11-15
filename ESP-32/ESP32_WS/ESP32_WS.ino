@@ -27,6 +27,22 @@ float distanceMeters = 0.0f;
 float estSpeedMps = 0.0f;
 unsigned long lastMotionMs = 0;
 
+float headingDeg = 0.0f;
+float posX = 0.0f;
+float posY = 0.0f;
+
+bool autoMode = false;
+int autoSpeed = 0;
+
+struct Waypoint {
+  float x;
+  float y;
+};
+
+Waypoint route[500];
+int routeLen = 0;
+int routeIndex = 0;
+
 float filterLowPass(float prev, float current, float alpha){
   return alpha * current + (1.0f - alpha) * prev;
 }
@@ -128,12 +144,38 @@ void wsEvent(WStype_t type, uint8_t * payload, size_t length){
     if (err) return;
     const char* t = doc["type"];
     if (t && strcmp(t, "motorControl") == 0) {
+      autoMode = false;
       JsonObject data = doc["data"];
       int l = data["speedLeft"] | 0;
       int r = data["speedRight"] | 0;
       String dir = data["direction"].as<String>();
       setMotor(l, r, dir);
       lastCmdMs = millis();
+    } else if (t && strcmp(t, "autoDrive") == 0) {
+      JsonObject data = doc["data"];
+      autoSpeed = data["speed"] | 120;
+      JsonArray path = data["path"].as<JsonArray>();
+      routeLen = 0;
+      for (JsonVariant p : path){
+        if (routeLen >= 500) break;
+        route[routeLen].x = p["x"] | 0.0f;
+        route[routeLen].y = p["y"] | 0.0f;
+        routeLen++;
+      }
+      routeIndex = 0;
+      autoMode = routeLen > 0;
+    } else if (t && strcmp(t, "pathCommand") == 0) {
+      JsonArray path = doc["data"]["path"].as<JsonArray>();
+      routeLen = 0;
+      for (JsonVariant p : path){
+        if (routeLen >= 500) break;
+        route[routeLen].x = p["x"] | 0.0f;
+        route[routeLen].y = p["y"] | 0.0f;
+        routeLen++;
+      }
+      routeIndex = 0;
+      autoSpeed = 120;
+      autoMode = routeLen > 0;
     } else if (t && strcmp(t, "ping") == 0) {
       StaticJsonDocument<128> pong;
       pong["type"] = "pong"; pong["source"] = "esp32"; pong["ts"] = millis();
@@ -209,11 +251,23 @@ void sendTelemetry(){
   float ayOut = stationary ? 0.0f : (fabs(ayF) < ACC_FLOOR ? 0.0f : ayF);
   float azOut = stationary ? G0 : (fabs(azF - G0) < ACC_FLOOR ? G0 : azF);
 
-  StaticJsonDocument<256> doc;
+  headingDeg += gzOut * dt;
+  if (headingDeg >= 360.0f) headingDeg -= 360.0f;
+  if (headingDeg < 0.0f) headingDeg += 360.0f;
+
+  float dx = estSpeedMps * dt * cosf(headingDeg * 0.0174533f);
+  float dy = estSpeedMps * dt * sinf(headingDeg * 0.0174533f);
+  posX += dx;
+  posY += dy;
+
+  StaticJsonDocument<320> doc;
   doc["type"] = "telemetry"; doc["source"] = "esp32"; doc["ts"] = millis();
   JsonObject d = doc.createNestedObject("data");
   d["speedLeft"] = speedL; d["speedRight"] = speedR;
   d["distance"] = distanceMeters;
+  d["heading"] = headingDeg;
+  d["posX"] = posX;
+  d["posY"] = posY;
   JsonObject gyro = d.createNestedObject("gyro");
   gyro["x"] = gxOut;
   gyro["y"] = gyOut;
@@ -230,15 +284,58 @@ void sendTelemetry(){
   float thHigh = (15.0f * scale) / SENSITIVITY_GAIN;
 
   if (jerkZ > thEvent){
-    StaticJsonDocument<192> ev;
+    StaticJsonDocument<256> ev;
     ev["type"] = "pothole"; ev["source"] = "esp32"; ev["ts"] = millis();
     JsonObject ed = ev.createNestedObject("data");
     ed["severity"] = (jerkZ>thHigh) ? "high" : (jerkZ>thMed ? "medium":"low");
     ed["value"] = jerkZ;
+    ed["posX"] = posX;
+    ed["posY"] = posY;
     String out2; serializeJson(ev, out2); webSocket.sendTXT(out2);
     // single longer beep on pothole
     beep(200, 0, 1);
   }
+}
+
+void autoNavigate(){
+  if (!autoMode || routeLen == 0) return;
+  float cx = posX;
+  float cy = posY;
+  float chead = headingDeg;
+  float tx = route[routeIndex].x;
+  float ty = route[routeIndex].y;
+  float dx = tx - cx;
+  float dy = ty - cy;
+  float dist = sqrtf(dx*dx + dy*dy);
+  if (dist < 0.15f){
+    routeIndex++;
+    if (routeIndex >= routeLen){
+      autoMode = false;
+      stopMotors();
+      // notify server that the route has completed
+      StaticJsonDocument<160> ev;
+      ev["type"] = "routeComplete";
+      ev["source"] = "esp32";
+      ev["ts"] = millis();
+      JsonObject d = ev.createNestedObject("data");
+      // server will attach routeId based on its currentRouteId
+      String out; serializeJson(ev, out); webSocket.sendTXT(out);
+      return;
+    }
+    return;
+  }
+  float targetAngle = atan2f(dy, dx) * 57.2958f;
+  float angleError = targetAngle - chead;
+  if (angleError > 180.0f) angleError -= 360.0f;
+  if (angleError < -180.0f) angleError += 360.0f;
+  int base = autoSpeed;
+  int turn = (int)(angleError * 1.8f);
+  int left = base - turn;
+  int right = base + turn;
+  left = constrain(left, 0, 255);
+  right = constrain(right, 0, 255);
+  setMotor(left, right, "forward");
+  lastCmdMs = millis();
 }
 
 void setup(){
@@ -285,6 +382,9 @@ unsigned long lastTx = 0;
 void loop(){
   webSocket.loop();
   unsigned long now = millis();
+  if (autoMode) {
+    autoNavigate();
+  }
   // failsafe: stop motors if control is stale
   if (lastCmdMs && (now - lastCmdMs > 300)) {
     if (speedL != 0 || speedR != 0) {

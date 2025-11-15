@@ -6,6 +6,7 @@ export function useWebSocket(url){
   const [serverStatus, setServerStatus] = useState({ esp32Connected:false, reactClients:0 });
   const [telemetry, setTelemetry] = useState(null);
   const [pothole, setPothole] = useState(null);
+  const [routeEvent, setRouteEvent] = useState(null);
   const backoff = useRef(500);
 
   const connect = useCallback(() => {
@@ -25,6 +26,7 @@ export function useWebSocket(url){
           if (msg.type === 'telemetry') setTelemetry({ ...msg.data, ts: msg.ts });
           if (msg.type === 'status') setServerStatus(msg.data);
           if (msg.type === 'pothole') setPothole({ ...msg.data, ts: msg.ts });
+          if (msg.type === 'routeComplete') setRouteEvent({ ...msg.data, ts: msg.ts });
         } catch {}
       };
 
@@ -51,5 +53,5 @@ export function useWebSocket(url){
     }
   }, []);
 
-  return { connected, serverStatus, telemetry, pothole, send };
+  return { connected, serverStatus, telemetry, pothole, routeEvent, send };
 }
