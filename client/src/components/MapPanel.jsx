@@ -241,11 +241,19 @@ export function MapPanel({ telemetry, pothole, routeEvent, send, esp32Connected 
       ctx.arc(cx, cy, 4, 0, Math.PI * 2);
       ctx.fill();
     });
-  }, [trail, potholes, selectedRoutePath, routePotholes, useStoredPotholes]);
+  }, [trail, potholes, selectedRoutePath, routePotholes, useStoredPotholes, builderPath]);
 
   const handleClear = () => {
     setTrail([]);
     setPotholes([]);
+    setDriveStatus('idle');
+  };
+
+  const handleCleanMap = () => {
+    setTrail([]);
+    setPotholes([]);
+    setBuilderSegments([]);
+    setUseStoredPotholes(false);
     setDriveStatus('idle');
   };
 
@@ -466,7 +474,22 @@ export function MapPanel({ telemetry, pothole, routeEvent, send, esp32Connected 
             </div>
             <div className="flex items-center justify-between text-[11px] text-slate-500">
               <span>Points: {trail.length}</span>
-              <button type="button" onClick={handleClear} className="underline-offset-2 hover:underline">Clear</button>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleClear}
+                  className="underline-offset-2 hover:underline"
+                >
+                  Clear trail
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCleanMap}
+                  className="underline-offset-2 hover:underline"
+                >
+                  Clean map
+                </button>
+              </div>
             </div>
           </div>
 
