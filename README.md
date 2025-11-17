@@ -55,6 +55,14 @@ path-hole/
 
 ---
 
+## Images
+
+![Dashboard screenshot](./Images/localhost_5173_.png)
+
+![Prototype car](./Images/prototype.jpg)
+
+---
+
 ## 2. High-Level System Architecture
 
 ### 2.1 Components

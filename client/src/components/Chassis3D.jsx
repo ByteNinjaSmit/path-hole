@@ -28,7 +28,7 @@ function CarBody({ pitch=0, roll=0, yaw=0, smoothing=0.15, showAxes=false }){
         <primitive
           object={scene}
           scale={1.5}
-          position={[0, 1.2, 0]}
+          position={[0, 2.2, 0]}
           castShadow
           receiveShadow
         />
